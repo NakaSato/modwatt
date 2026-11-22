@@ -65,7 +65,7 @@ impl App {
             first: 1,
             last: 32,
             timeout_ms: 500,
-            gap_ms: 200,
+            gap_ms: 850, // Growatt wants ~850–1000 ms of bus quiet between requests
             results: Vec::new(),
             selected: None,
             target: String::new(),
@@ -94,6 +94,7 @@ impl App {
         self.first = 1;
         self.last = 16;
         self.sim_opts.port = 0; // any free port, so a running copy of the app doesn't clash
+        self.gap_ms = 0; // the screenshot waits for this scan, so skip the real-bus gap
         self.start_scan(ctx);
         while self.rx.is_some() {
             std::thread::sleep(Duration::from_millis(20));
