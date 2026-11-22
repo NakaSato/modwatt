@@ -67,6 +67,11 @@ fn run(cfg: &ScanConfig, tx: &Sender<ScanEvent>, ctx: &egui::Context, cancel: &A
         Ok(c) => c,
         Err(e) => {
             send(ScanEvent::Log(Level::Error, format!("Gateway unreachable: {e}")));
+            send(ScanEvent::Log(Level::Info, format!(
+                "Check the IP, and that Modbus TCP is enabled on the gateway's web page (http://{}). \
+                 A new ShineMaster-X has DHCP off and sits at 192.168.0.254.",
+                cfg.host
+            )));
             return;
         }
     };
@@ -115,6 +120,11 @@ fn run(cfg: &ScanConfig, tx: &Sender<ScanEvent>, ctx: &egui::Context, cancel: &A
         }
     }
     send(ScanEvent::Log(Level::Success, format!("Scan complete: {}", summary(&found))));
+    if found.is_empty() {
+        send(ScanEvent::Log(Level::Warn, "The gateway answered but no device did. Check the RS485 baud rate \
+            (default 9600) and A/B wiring, and on ShineMaster-X that devices are added under \
+            Device Maintenance.".into()));
+    }
 }
 
 /// "3 device(s) found (2 Inverter, 1 Meter (Eastron))."

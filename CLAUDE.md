@@ -55,7 +55,8 @@ Data flows: `app` (UI thread) → `scanner` / `discovery` (background threads) �
 - **`scanner.rs`**: one background thread sweeps slave IDs strictly sequentially over a single connection. It reports to the UI via `mpsc` `ScanEvent`s and calls `ctx.request_repaint()`. Cancellation uses an `AtomicBool`. The integration tests that run the scanner against the simulator live here.
 - **`discovery.rs`**: finds gateways on the LAN for users whose gateway gets a DHCP address from the router.
   - **Local subnet:** derived from a UDP `connect` that sends no packets.
-  - **Sweep:** parallel TCP connects to `.1–.254:port`, then one Modbus read per open port to classify it as an inverter, a gateway, or just an open port.
+  - **Sweep:** parallel TCP connects to `.1–.254` on the configured port plus 502–505 (multi-port converters map COM2–4 to 503–505), then one Modbus read per open port to classify it as a device, a gateway, or just an open port.
+  - **Vendor:** Modbus-speaking hosts get one HTTP `GET /` on port 80; brand keywords (`vendor_from_http`) label ShineMaster, Waveshare, Ebyte, Moxa, USR, Elfin.
 - **`sim.rs`**: an in-process fake gateway that implements the same register map, used by tests, the GUI "Simulator" source and `--sim`.
   - **Serialized bus:** one `Mutex` serializes the simulated RS485 bus.
   - **Empty IDs:** reply with `0x0B` or stay silent.

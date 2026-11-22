@@ -186,15 +186,22 @@ impl App {
             self.disc_edit_prefix = true;
             return;
         };
+        let ports = discovery::ports_for(self.port);
         self.disc_found.clear();
         self.disc_checked = 0;
         self.disc_ran = true;
         self.disc_edit_prefix = false;
         self.log(
             Level::Info,
-            format!("Searching {}.{}.{}.1–254 for Modbus TCP on port {}", prefix[0], prefix[1], prefix[2], self.port),
+            format!(
+                "Searching {}.{}.{}.1–254 for Modbus TCP on ports {}",
+                prefix[0],
+                prefix[1],
+                prefix[2],
+                ports.iter().map(u16::to_string).collect::<Vec<_>>().join(", ")
+            ),
         );
-        self.disc_rx = Some(discovery::spawn(prefix, self.port, ctx));
+        self.disc_rx = Some(discovery::spawn(prefix, ports, ctx));
     }
 
     fn poll(&mut self) {
@@ -221,7 +228,7 @@ impl App {
                     DiscoveryEvent::Progress(n) => self.disc_checked = n,
                     DiscoveryEvent::Found(f) => {
                         let lvl = if f.verdict == Verdict::PortOpen { Level::Info } else { Level::Success };
-                        self.log(lvl, format!("{} — {}", f.ip, f.verdict.describe()));
+                        self.log(lvl, format!("{}:{} — {}", f.ip, f.port, describe_found(&f)));
                         self.disc_found.push(f);
                     }
                     DiscoveryEvent::Done => done = true,
@@ -231,13 +238,21 @@ impl App {
                 let n = self.disc_found.len();
                 self.log(
                     if n > 0 { Level::Success } else { Level::Warn },
-                    format!("Network search done: {n} device(s) with port {} open", self.port),
+                    format!("Network search done: {n} open Modbus port(s) found"),
                 );
+                if n == 0 && !self.disc_prefix.trim_end_matches('.').ends_with("192.168.0") {
+                    self.log(
+                        Level::Info,
+                        "A new ShineMaster-X is at 192.168.0.254 with DHCP off. Connect it straight to this \
+                         computer, set this computer to 192.168.0.10, and search 192.168.0. instead.",
+                    );
+                }
                 if let [only] = self.disc_found.as_slice()
                     && only.verdict != Verdict::PortOpen
                     && self.host.trim().is_empty()
                 {
                     self.host = only.ip.to_string();
+                    self.port = only.port;
                 }
             } else {
                 self.disc_rx = Some(rx);
@@ -416,7 +431,7 @@ impl App {
         let mut pick = None;
         for f in &self.disc_found {
             let is_modbus = f.verdict != Verdict::PortOpen;
-            let selected = self.host.trim() == f.ip.to_string();
+            let selected = self.host.trim() == f.ip.to_string() && self.port == f.port;
             let resp = egui::Frame::new()
                 .fill(if selected { p.surface } else { Color32::TRANSPARENT })
                 .stroke(Stroke::new(1.0, if selected { p.faint } else { p.border }))
@@ -426,19 +441,21 @@ impl App {
                     ui.set_width(ui.available_width());
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = 2.0;
-                        theme::dot_label(ui, &f.ip.to_string(), if is_modbus { p.success } else { p.faint }, p.text);
-                        theme::hint(ui, f.verdict.describe());
+                        let addr = if f.port == 502 { f.ip.to_string() } else { format!("{}:{}", f.ip, f.port) };
+                        theme::dot_label(ui, &addr, if is_modbus { p.success } else { p.faint }, p.text);
+                        theme::hint(ui, describe_found(f));
                     });
                 })
                 .response
                 .interact(egui::Sense::click())
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
             if resp.clicked() {
-                pick = Some(f.ip.to_string());
+                pick = Some((f.ip.to_string(), f.port));
             }
         }
-        if let Some(ip) = pick {
+        if let Some((ip, port)) = pick {
             self.host = ip;
+            self.port = port;
         }
         if self.disc_ran && !self.discovering() && self.disc_found.is_empty() {
             ui.label(
@@ -1057,6 +1074,14 @@ fn group(x: f64, decimals: usize) -> String {
         out.push_str(frac);
     }
     if x < 0.0 { format!("-{out}") } else { out }
+}
+
+/// "Growatt ShineMaster · Modbus gateway, device at ID 1"
+fn describe_found(f: &Found) -> String {
+    match f.vendor {
+        Some(v) => format!("{v} · {}", f.verdict.describe()),
+        None => f.verdict.describe(),
+    }
 }
 
 #[cfg(test)]
